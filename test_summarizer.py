@@ -144,3 +144,74 @@ def test_missing_api_key_raises_clear_error(monkeypatch):
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     with pytest.raises(RuntimeError, match="GEMINI_API_KEY"):
         summarize("테스트 문장입니다.")
+
+
+# ══════════════════════════════════════════════════════
+# 6. 재시도(Retry) 로직 테스트 — 실제 API 호출 없이 mock으로 검증
+#    (2026-09-20 실습 중 실제로 503 오류를 발견해서 추가한 회귀 테스트)
+#    (터미널 로그를 따로 저장 안 해놨다가 나중에 대화 기록에서 복원해서 파일로 정리)
+# ══════════════════════════════════════════════════════
+
+class _FakeResponse:
+    def __init__(self, text):
+        self.text = text
+
+
+def test_retries_on_server_error_then_succeeds(monkeypatch):
+    """
+    503(ServerError)이 발생해도 최대 MAX_RETRIES번까지는 재시도해서
+    결국 성공하면 정상적으로 결과를 반환해야 한다.
+    """
+    import app as app_module
+    from google.genai import errors as genai_errors
+
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-test")
+
+    call_count = {"n": 0}
+
+    class FakeModels:
+        def generate_content(self, model, contents, config):
+            call_count["n"] += 1
+            if call_count["n"] < 2:
+                # 처음 한 번은 503로 실패시킴
+                class FakeHttpResponse:
+                    status_code = 503
+                    text = '{"error": {"message": "overloaded"}}'
+                raise genai_errors.ServerError(503, FakeHttpResponse())
+            return _FakeResponse("요약된 결과입니다.")
+
+    class FakeClient:
+        def __init__(self, api_key):
+            self.models = FakeModels()
+
+    monkeypatch.setattr(app_module.genai, "Client", FakeClient)
+    monkeypatch.setattr(app_module.time, "sleep", lambda s: None)  # 테스트 속도를 위해 대기 제거
+
+    result = app_module.summarize("재시도 테스트용 입력 문장입니다.")
+    assert result == "요약된 결과입니다."
+    assert call_count["n"] == 2  # 1번 실패 + 1번 성공 = 총 2번 호출
+
+
+def test_gives_up_after_max_retries(monkeypatch):
+    """MAX_RETRIES를 넘어서도 계속 503이면 결국 예외를 그대로 전파해야 한다"""
+    import app as app_module
+    from google.genai import errors as genai_errors
+
+    monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-test")
+
+    class FakeModels:
+        def generate_content(self, model, contents, config):
+            class FakeHttpResponse:
+                status_code = 503
+                text = '{"error": {"message": "overloaded"}}'
+            raise genai_errors.ServerError(503, FakeHttpResponse())
+
+    class FakeClient:
+        def __init__(self, api_key):
+            self.models = FakeModels()
+
+    monkeypatch.setattr(app_module.genai, "Client", FakeClient)
+    monkeypatch.setattr(app_module.time, "sleep", lambda s: None)
+
+    with pytest.raises(genai_errors.ServerError):
+        app_module.summarize("계속 실패하는 케이스입니다.")
