@@ -1,0 +1,187 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.7, pytest-9.1.1, pluggy-1.6.0 -- /opt/anaconda3/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/kslivergun/work/py-llm-chat-wrapper
+plugins: anyio-4.8.0
+collecting ... collected 13 items
+
+test_summarizer.py::test_normal_summary_returns_text PASSED              [  7%]
+test_summarizer.py::test_summary_is_shorter_than_input PASSED            [ 15%]
+test_summarizer.py::test_empty_string_raises_value_error PASSED          [ 23%]
+test_summarizer.py::test_whitespace_only_raises_value_error PASSED       [ 30%]
+test_summarizer.py::test_none_input_raises_value_error PASSED            [ 38%]
+test_summarizer.py::test_over_max_length_raises_value_error PASSED       [ 46%]
+test_summarizer.py::test_special_characters_do_not_crash PASSED          [ 53%]
+test_summarizer.py::test_single_word_input PASSED                        [ 61%]
+test_summarizer.py::test_consistency_across_repeated_calls PASSED        [ 69%]
+test_summarizer.py::test_prompt_injection_does_not_leak_system_instruction PASSED [ 76%]
+test_summarizer.py::test_missing_api_key_raises_clear_error PASSED       [ 84%]
+test_summarizer.py::test_retries_on_server_error_then_succeeds FAILED    [ 92%]
+test_summarizer.py::test_gives_up_after_max_retries FAILED               [100%]
+
+=================================== FAILURES ===================================
+__________________ test_retries_on_server_error_then_succeeds __________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11ba1d3a0>
+
+    def test_retries_on_server_error_then_succeeds(monkeypatch):
+        """
+        503(ServerError)이 발생해도 최대 MAX_RETRIES번까지는 재시도해서
+        결국 성공하면 정상적으로 결과를 반환해야 한다.
+        """
+        import app as app_module
+        from google.genai import errors as genai_errors
+    
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-test")
+    
+        call_count = {"n": 0}
+    
+        class FakeModels:
+            def generate_content(self, model, contents, config):
+                call_count["n"] += 1
+                if call_count["n"] < 2:
+                    # 처음 한 번은 503로 실패시킴
+                    class FakeHttpResponse:
+                        status_code = 503
+                        text = '{"error": {"message": "overloaded"}}'
+                    raise genai_errors.ServerError(503, FakeHttpResponse())
+                return _FakeResponse("요약된 결과입니다.")
+    
+        class FakeClient:
+            def __init__(self, api_key):
+                self.models = FakeModels()
+    
+        monkeypatch.setattr(app_module.genai, "Client", FakeClient)
+        monkeypatch.setattr(app_module.time, "sleep", lambda s: None)  # 테스트 속도를 위해 대기 제거
+    
+>       result = app_module.summarize("재시도 테스트용 입력 문장입니다.")
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+test_summarizer.py:190: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app.py:67: in summarize
+    response = client.models.generate_content(
+test_summarizer.py:180: in generate_content
+    raise genai_errors.ServerError(503, FakeHttpResponse())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ServerError(503, <test_summarizer.test_retries_on_server_error_then_succeeds.<locals>.FakeModels.generate_content.<locals>.FakeHttpResponse object at 0x11ba1c3b0>)
+code = 503
+response = <test_summarizer.test_retries_on_server_error_then_succeeds.<locals>.FakeModels.generate_content.<locals>.FakeHttpResponse object at 0x11ba1c3b0>
+
+    def __init__(
+        self,
+        code: int,
+        response: Union[requests.Response, 'ReplayResponse', httpx.Response],
+    ):
+      self.response = response
+    
+      if isinstance(response, requests.Response):
+        try:
+          # do not do any extra muanipulation on the response.
+          # return the raw response json as is.
+          response_json = response.json()
+        except requests.exceptions.JSONDecodeError:
+          response_json = {
+              'message': response.text,
+              'status': response.reason,
+          }
+      elif isinstance(response, httpx.Response):
+        try:
+          response_json = response.json()
+        except (json.decoder.JSONDecodeError, httpx.ResponseNotRead):
+          try:
+            message = response.text
+          except httpx.ResponseNotRead:
+            message = None
+          response_json = {
+              'message': message,
+              'status': response.reason_phrase,
+          }
+      else:
+>       response_json = response.body_segments[0].get('error', {})
+                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeHttpResponse' object has no attribute 'body_segments'
+
+/opt/anaconda3/lib/python3.12/site-packages/google/genai/errors.py:66: AttributeError
+_______________________ test_gives_up_after_max_retries ________________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x11ba1e450>
+
+    def test_gives_up_after_max_retries(monkeypatch):
+        """MAX_RETRIES를 넘어서도 계속 503이면 결국 예외를 그대로 전파해야 한다"""
+        import app as app_module
+        from google.genai import errors as genai_errors
+    
+        monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-test")
+    
+        class FakeModels:
+            def generate_content(self, model, contents, config):
+                class FakeHttpResponse:
+                    status_code = 503
+                    text = '{"error": {"message": "overloaded"}}'
+                raise genai_errors.ServerError(503, FakeHttpResponse())
+    
+        class FakeClient:
+            def __init__(self, api_key):
+                self.models = FakeModels()
+    
+        monkeypatch.setattr(app_module.genai, "Client", FakeClient)
+        monkeypatch.setattr(app_module.time, "sleep", lambda s: None)
+    
+        with pytest.raises(genai_errors.ServerError):
+>           app_module.summarize("계속 실패하는 케이스입니다.")
+
+test_summarizer.py:217: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+app.py:67: in summarize
+    response = client.models.generate_content(
+test_summarizer.py:207: in generate_content
+    raise genai_errors.ServerError(503, FakeHttpResponse())
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = ServerError(503, <test_summarizer.test_gives_up_after_max_retries.<locals>.FakeModels.generate_content.<locals>.FakeHttpResponse object at 0x11ba1d760>)
+code = 503
+response = <test_summarizer.test_gives_up_after_max_retries.<locals>.FakeModels.generate_content.<locals>.FakeHttpResponse object at 0x11ba1d760>
+
+    def __init__(
+        self,
+        code: int,
+        response: Union[requests.Response, 'ReplayResponse', httpx.Response],
+    ):
+      self.response = response
+    
+      if isinstance(response, requests.Response):
+        try:
+          # do not do any extra muanipulation on the response.
+          # return the raw response json as is.
+          response_json = response.json()
+        except requests.exceptions.JSONDecodeError:
+          response_json = {
+              'message': response.text,
+              'status': response.reason,
+          }
+      elif isinstance(response, httpx.Response):
+        try:
+          response_json = response.json()
+        except (json.decoder.JSONDecodeError, httpx.ResponseNotRead):
+          try:
+            message = response.text
+          except httpx.ResponseNotRead:
+            message = None
+          response_json = {
+              'message': message,
+              'status': response.reason_phrase,
+          }
+      else:
+>       response_json = response.body_segments[0].get('error', {})
+                        ^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: 'FakeHttpResponse' object has no attribute 'body_segments'
+
+/opt/anaconda3/lib/python3.12/site-packages/google/genai/errors.py:66: AttributeError
+=========================== short test summary info ============================
+FAILED test_summarizer.py::test_retries_on_server_error_then_succeeds - Attri...
+FAILED test_summarizer.py::test_gives_up_after_max_retries - AttributeError: ...
+======================== 2 failed, 11 passed in 24.98s =========================
