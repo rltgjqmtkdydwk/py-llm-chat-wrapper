@@ -1,0 +1,72 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.7, pytest-9.1.1, pluggy-1.6.0 -- /opt/anaconda3/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/kslivergun/work/py-llm-chat-wrapper
+plugins: anyio-4.8.0
+collected 11 items
+
+test_summarizer.py::test_normal_summary_returns_text PASSED              [  9%]
+test_summarizer.py::test_summary_is_shorter_than_input PASSED            [ 18%]
+test_summarizer.py::test_empty_string_raises_value_error PASSED          [ 27%]
+test_summarizer.py::test_whitespace_only_raises_value_error PASSED       [ 36%]
+test_summarizer.py::test_none_input_raises_value_error PASSED            [ 45%]
+test_summarizer.py::test_over_max_length_raises_value_error PASSED       [ 54%]
+test_summarizer.py::test_special_characters_do_not_crash PASSED          [ 63%]
+test_summarizer.py::test_single_word_input PASSED                        [ 72%]
+test_summarizer.py::test_consistency_across_repeated_calls FAILED        [ 81%]
+test_summarizer.py::test_prompt_injection_does_not_leak_system_instruction PASSED [ 90%]
+test_summarizer.py::test_missing_api_key_raises_clear_error PASSED       [100%]
+
+=================================== FAILURES ===================================
+____________________ test_consistency_across_repeated_calls ____________________
+
+    @requires_api_key
+    def test_consistency_across_repeated_calls():
+        """
+        같은 입력을 여러 번 호출했을 때, 매번 완전히 다른 답이 나오지는 않는지 확인.
+        LLM은 정확히 같은 문자열이 나오길 기대할 수 없으므로,
+        '핵심 키워드가 유지되는가'를 기준으로 느슨하게 검증한다.
+        """
+        text = "이번 스프린트 목표는 로그인 기능 리팩토링과 API 응답 속도 개선입니다."
+>       results = [summarize(text) for _ in range(3)]
+                   ^^^^^^^^^^^^^^^
+
+test_summarizer.py:108:
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+app.py:62: in summarize
+    response = client.models.generate_content(
+/opt/anaconda3/lib/python3.12/site-packages/google/genai/models.py:5304: in generate_content
+    response = self._generate_content(
+/opt/anaconda3/lib/python3.12/site-packages/google/genai/models.py:4272: in _generate_content
+    response_dict = self._api_client.request(
+/opt/anaconda3/lib/python3.12/site-packages/google/genai/_api_client.py:575: in request
+    response = self._request(http_request, stream=False)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/anaconda3/lib/python3.12/site-packages/google/genai/_api_client.py:488: in _request
+    return self._request_unauthorized(http_request, stream)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/anaconda3/lib/python3.12/site-packages/google/genai/_api_client.py:511: in _request_unauthorized
+    errors.APIError.raise_for_response(response)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+cls = <class 'google.genai.errors.APIError'>, response = <Response [503]>
+
+    @classmethod
+    def raise_for_response(
+        cls, response: Union[requests.Response, 'ReplayResponse', httpx.Response]
+    ):
+      """Raises an error with detailed error message if the response has an error status."""
+      if response.status_code == 200:
+        return
+
+      status_code = response.status_code
+      if 400 <= status_code < 500:
+        raise ClientError(status_code, response)
+      elif 500 <= status_code < 600:
+>       raise ServerError(status_code, response)
+E       google.genai.errors.ServerError: 503 UNAVAILABLE. {'error': {'code': 503, 'message': 'This model is currently experiencing high demand. Spikes in demand are usually temporary. Please try again later.', 'status': 'UNAVAILABLE'}}
+
+/opt/anaconda3/lib/python3.12/site-packages/google/genai/errors.py:116: ServerError
+=========================== short test summary info ============================
+FAILED test_summarizer.py::test_consistency_across_repeated_calls - google.genai.errors.ServerError: 503 UNAVAILABLE. {'error': {'code': 503, '...
+======================== 1 failed, 10 passed in 20.03s =========================
