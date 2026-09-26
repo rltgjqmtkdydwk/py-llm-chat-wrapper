@@ -162,6 +162,7 @@ def test_retries_on_server_error_then_succeeds(monkeypatch):
     503(ServerError)이 발생해도 최대 MAX_RETRIES번까지는 재시도해서
     결국 성공하면 정상적으로 결과를 반환해야 한다.
     """
+    import httpx
     import app as app_module
     from google.genai import errors as genai_errors
 
@@ -169,15 +170,22 @@ def test_retries_on_server_error_then_succeeds(monkeypatch):
 
     call_count = {"n": 0}
 
+    def make_fake_503():
+        # genai_errors.ServerError는 내부에서 httpx.Response / requests.Response
+        # 타입인지 isinstance로 확인하고 .json()을 호출하므로, 진짜 httpx.Response를
+        # 만들어서 넘겨야 라이브러리 내부 파싱 로직과 어긋나지 않는다.
+        return httpx.Response(
+            status_code=503,
+            json={"error": {"code": 503, "message": "overloaded", "status": "UNAVAILABLE"}},
+            request=httpx.Request("POST", "https://fake.example/generate"),
+        )
+
     class FakeModels:
         def generate_content(self, model, contents, config):
             call_count["n"] += 1
             if call_count["n"] < 2:
                 # 처음 한 번은 503로 실패시킴
-                class FakeHttpResponse:
-                    status_code = 503
-                    text = '{"error": {"message": "overloaded"}}'
-                raise genai_errors.ServerError(503, FakeHttpResponse())
+                raise genai_errors.ServerError(503, make_fake_503())
             return _FakeResponse("요약된 결과입니다.")
 
     class FakeClient:
@@ -194,17 +202,22 @@ def test_retries_on_server_error_then_succeeds(monkeypatch):
 
 def test_gives_up_after_max_retries(monkeypatch):
     """MAX_RETRIES를 넘어서도 계속 503이면 결국 예외를 그대로 전파해야 한다"""
+    import httpx
     import app as app_module
     from google.genai import errors as genai_errors
 
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-test")
 
+    def make_fake_503():
+        return httpx.Response(
+            status_code=503,
+            json={"error": {"code": 503, "message": "overloaded", "status": "UNAVAILABLE"}},
+            request=httpx.Request("POST", "https://fake.example/generate"),
+        )
+
     class FakeModels:
         def generate_content(self, model, contents, config):
-            class FakeHttpResponse:
-                status_code = 503
-                text = '{"error": {"message": "overloaded"}}'
-            raise genai_errors.ServerError(503, FakeHttpResponse())
+            raise genai_errors.ServerError(503, make_fake_503())
 
     class FakeClient:
         def __init__(self, api_key):
