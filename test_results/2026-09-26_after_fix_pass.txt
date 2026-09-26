@@ -1,0 +1,22 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.7, pytest-9.1.1, pluggy-1.6.0 -- /opt/anaconda3/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/kslivergun/work/py-llm-chat-wrapper
+plugins: anyio-4.8.0
+collecting ... collected 13 items
+
+test_summarizer.py::test_normal_summary_returns_text PASSED              [  7%]
+test_summarizer.py::test_summary_is_shorter_than_input PASSED            [ 15%]
+test_summarizer.py::test_empty_string_raises_value_error PASSED          [ 23%]
+test_summarizer.py::test_whitespace_only_raises_value_error PASSED       [ 30%]
+test_summarizer.py::test_none_input_raises_value_error PASSED            [ 38%]
+test_summarizer.py::test_over_max_length_raises_value_error PASSED       [ 46%]
+test_summarizer.py::test_special_characters_do_not_crash PASSED          [ 53%]
+test_summarizer.py::test_single_word_input PASSED                        [ 61%]
+test_summarizer.py::test_consistency_across_repeated_calls PASSED        [ 69%]
+test_summarizer.py::test_prompt_injection_does_not_leak_system_instruction PASSED [ 76%]
+test_summarizer.py::test_missing_api_key_raises_clear_error PASSED       [ 84%]
+test_summarizer.py::test_retries_on_server_error_then_succeeds PASSED    [ 92%]
+test_summarizer.py::test_gives_up_after_max_retries PASSED               [100%]
+
+============================= 13 passed in 12.94s ==============================
